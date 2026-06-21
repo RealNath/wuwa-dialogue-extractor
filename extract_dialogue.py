@@ -27,11 +27,11 @@ def get_actions_for_state_keys(filepath: str, state_keys: List[str]) -> dict:
             
     return result
 
-def parse_action_string(action_string: str) -> list:
-    if not action_string:
+def parse_json_string(json_string: str) -> list:
+    if not json_string:
         return []
     
-    parsed_data = json.loads(action_string)
+    parsed_data = json.loads(json_string)
     
     with open("test.json", "w", encoding="utf-8") as f:
         # We must dump the parsed_data (the list/dict), NOT the action_string!
@@ -39,15 +39,14 @@ def parse_action_string(action_string: str) -> list:
     
     return parsed_data
 
-def print_talk_flow(parsed_data: list):
+def get_talk_flow_lines(parsed_data: list) -> list:
     show_talks = [item for item in parsed_data if item.get("Name") == "ShowTalk"]
     if not show_talks:
-        return
+        return []
         
+    output_lines = []
+    
     for idx, show_talk in enumerate(show_talks):
-        if idx > 0:
-            print("==========")
-            
         params = show_talk.get("Params", {})
         talk_items = {item["Id"]: item for item in params.get("TalkItems", [])}
         talk_sequence = params.get("TalkSequence", [])
@@ -74,7 +73,7 @@ def print_talk_flow(parsed_data: list):
                 
                 tid_talk = item.get("TidTalk")
                 if tid_talk:
-                    print(f"{indent}{tid_talk}")
+                    output_lines.append(f"{indent}{tid_talk}")
                     
                 if item.get("Options"):
                     options = item.get("Options")
@@ -97,7 +96,7 @@ def print_talk_flow(parsed_data: list):
                         for opt in options:
                             opt_tid = opt.get("TidTalkOption")
                             if opt_tid:
-                                print(f"{indent}{opt_tid}")
+                                output_lines.append(f"{indent}{opt_tid}")
             
             if has_branching_options:
                 next_seqs = set()
@@ -116,7 +115,7 @@ def print_talk_flow(parsed_data: list):
                 for opt in options_to_branch:
                     opt_tid = opt.get("TidTalkOption")
                     if opt_tid:
-                        print(f"{indent}{opt_tid}")
+                        output_lines.append(f"{indent}{opt_tid}")
                         
                     branch_seq_idx = None
                     for trans in transitions:
@@ -143,21 +142,64 @@ def print_talk_flow(parsed_data: list):
                     traverse(seq_idx + 1, indent_level, stop_seqs)
 
         traverse(0, 0, set())
-
-# Example:
-if __name__ == "__main__":
-    # 1. Get States (StateKeys) from flow.json
-    state_keys = get_states_for_id("flow.json", "剧情_3_3_拉海洛主线_下半_1")
-    print(f"StateKeys found: {state_keys}")
-    
-    # 2. Get Actions for each StateKey from flowstate.json
-    if state_keys:
-        actions_dict = get_actions_for_state_keys("flowstate.json", state_keys)
         
-        # 3. Parse one of the action strings into actual Python data
-        for key in state_keys:
-            if key == "剧情_3_3_拉海洛主线_下半_1_20":
-                action_string = actions_dict.get(key)
+    return output_lines
+
+if __name__ == "__main__":
+    import sys
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Extract dialogues for a given QuestId")
+    parser.add_argument("quest_id", type=int, help="QuestId to extract dialogues for")
+    args = parser.parse_args()
+
+    with open("plothandbookconfig.json", "r", encoding="utf-8") as f:
+        plothb_data = json.load(f)
+        
+    quest_data_str = None
+    for item in plothb_data:
+        if item.get("QuestId") == args.quest_id:
+            quest_data_str = item.get("Data")
+            break
             
-                parsed_actions = parse_action_string(action_string)
-                print_talk_flow(parsed_actions)
+    if not quest_data_str:
+        print(f"QuestId {args.quest_id} not found in plothandbookconfig.json")
+        sys.exit(1)
+        
+    parsed_data = parse_json_string(quest_data_str)
+    
+    state_keys = []
+    for item in parsed_data:
+        flow = item.get("Flow", {})
+        flow_list_name = flow.get("FlowListName", "")
+        flow_id = flow.get("FlowId", 0)
+        state_id = flow.get("StateId", 0)
+        
+        if not flow_list_name:
+            continue
+            
+        state_key = f"{flow_list_name}_{flow_id}_{state_id}"
+        state_keys.append(state_key)
+        
+    if not state_keys:
+        print(f"No valid state keys found for QuestId {args.quest_id}.")
+        sys.exit(0)
+        
+    try:
+        actions_dict = get_actions_for_state_keys("flowstate.json", state_keys)
+    except FileNotFoundError:
+        print("flowstate.json not found.")
+        sys.exit(1)
+        
+    first_print = True
+    for state_key in state_keys:
+        action_string = actions_dict.get(state_key)
+        if action_string:
+            parsed_actions = parse_json_string(action_string)
+            lines = get_talk_flow_lines(parsed_actions)
+            if lines:
+                if not first_print:
+                    print("==========")
+                for line in lines:
+                    print(line)
+                first_print = False
