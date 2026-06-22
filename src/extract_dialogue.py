@@ -1,6 +1,14 @@
 from json import encoder
 import json
+import re
 from typing import List
+
+def format_dialogue(character_name: str, dialogue: str) -> str:
+    line = f"'''{character_name}:''' {dialogue}"
+    line = line.replace("{PlayerName}", "{{Rover}}")
+    # Replace {Male=X;Female=Y} with {{MC|m=X|f=Y}}
+    line = re.sub(r'\{Male=(.*?);Female=(.*?)\}', r'{{MC|m=\1|f=\2}}', line)
+    return line
 
 def get_states_for_id(filepath: str, target_id: str) -> List[str]:
     with open(filepath, 'r', encoding='utf-8') as f:
@@ -79,9 +87,8 @@ def get_talk_flow_lines(parsed_data: list, multitext_dict: dict = None) -> list:
                     character_name = multitext_dict.get(f"Speaker_{who_id}_Name", who_id)
                     dialogue = multitext_dict.get(tid_talk, tid_talk)
                     
-                    dialogue_line = f"{indent}'''{character_name}:''' {dialogue}"
-                    
-                    dialogue_line = dialogue_line.replace("{PlayerName}", "{{Rover}}")
+                    formatted_dialogue = format_dialogue(character_name, dialogue)
+                    dialogue_line = f"{indent}{formatted_dialogue}"
                     output_lines.append(dialogue_line)
                     
                 if item.get("Options"):
